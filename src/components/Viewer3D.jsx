@@ -107,10 +107,12 @@ function Viewer3D({ filename }) {
         renderer.dispose();
       }
 
-
       if (mount && mount.hasChildNodes()) {
-        while (mount.firstChild) {
-          mount.removeChild(mountRef.firstChild);
+        const children = Array.from(mount.childNodes);
+        for (let child of children) {
+          if (child instanceof Node && mount.contains(child)) {
+            mount.removeChild(child);
+          }
         }
       }
     };
