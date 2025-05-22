@@ -8,7 +8,13 @@ function Viewer3D({ filename }) {
   const mountRef = useRef();
 
   useEffect(() => {
-    if (!filename || !mountRef.current) return;
+    const mount = mountRef.current;
+    if (!filename || !mount) return;
+
+    // Remove existing child nodes before rendering
+    while (mount.firstChild) {
+        mount.removeChild(mount.firstChild);
+    }
 
     // Declare global renderer to clean it up later
     let renderer;
@@ -101,7 +107,7 @@ function Viewer3D({ filename }) {
         renderer.dispose();
       }
 
-      const mount = mountRef.current;
+
       if (mount && mount.hasChildNodes()) {
         while (mount.firstChild) {
           mount.removeChild(mountRef.firstChild);
