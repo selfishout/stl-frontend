@@ -9,8 +9,8 @@ function FileUploader({ onUploadSuccess }) {
     const formData = new FormData();
     formData.append("file", file);
 
-    // const res = await axios.post("http://localhost:8000/upload", formData);   //Localhost
-    const res = await axios.post("https://stl-backend-ipt7.onrender.com/uploads", formData);
+    // const res = await axios.post("http://localhost:8000/upload", formData); //Localhost
+    const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload", formData);
 
     onUploadSuccess(res.data.filename);
   };
