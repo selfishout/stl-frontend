@@ -41,7 +41,7 @@ function Viewer3D({ filename }) {
 
     // Load STL model
     const loader = new STLLoader();
-    loader.load(`http://localhost:8000/uploads/${filename}`, (geometry) => {
+    loader.load(`https://stl-backend-ipt7.onrender.com/uploads/${filename}`, (geometry) => {
       console.log("✅ STL geometry loaded", geometry);
 
       const material = new THREE.MeshNormalMaterial({ wireframe: false });
