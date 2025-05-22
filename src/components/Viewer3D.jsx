@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from "react";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import { MeshPhongMaterial } from 'three';
+// import { MeshPhongMaterial } from 'three';
 
 function Viewer3D({ filename }) {
   const mountRef = useRef();
