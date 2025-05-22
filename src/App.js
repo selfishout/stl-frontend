@@ -1,23 +1,19 @@
-import logo from './logo.svg';
-import './App.css';
+import React, { useState } from "react";
+import FileUploader from "./components/FileUploader";
+import Viewer3D from "./components/Viewer3D";
 
 function App() {
+  const [filename, setFilename] = useState(null);
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "sans-serif" }}>
+      <div style={{ width: "250px", padding: "20px", background: "#f8f8f8" }}>
+        <h2>STL Dashboard</h2>
+        <FileUploader onUploadSuccess={setFilename} />
+      </div>
+      <div style={{ flexGrow: 1, padding: "20px" }}>
+        {filename ? <Viewer3D filename={filename} /> : <p>No file uploaded yet.</p>}
+      </div>
     </div>
   );
 }
