@@ -42,7 +42,7 @@ function Viewer3D({ filename }) {
     // Load STL model
     const loader = new STLLoader();
     loader.load(`https://stl-backend-ipt7.onrender.com/uploads/${filename}`, (geometry) => {
-      console.log("✅ STL geometry loaded", geometry);
+      // console.log("✅ STL geometry loaded", geometry);
 
       const material = new THREE.MeshNormalMaterial({ wireframe: false });
 
@@ -70,9 +70,9 @@ function Viewer3D({ filename }) {
       mesh.name = "uploaded-stl";
       scene.add(mesh);
 
-      console.log("Bounding box:", bbox);
-      console.log("Bounding sphere radius:", radius);
-      console.log("Applied scale:", scale);
+      // console.log("Bounding box:", bbox);
+      // console.log("Bounding sphere radius:", radius);
+      // console.log("Applied scale:", scale);
     });
 
     // Animation loop
@@ -101,9 +101,10 @@ function Viewer3D({ filename }) {
         renderer.dispose();
       }
 
-      if (mountRef.current) {
-        while (mountRef.current.firstChild) {
-          mountRef.current.removeChild(mountRef.current.firstChild);
+      const mount = mountRef.current;
+      if (mount && mount.hasChildNodes()) {
+        while (mount.firstChild) {
+          mount.removeChild(mountRef.firstChild);
         }
       }
     };
