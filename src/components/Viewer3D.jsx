@@ -105,11 +105,11 @@ function Viewer3D({ filename }) {
           newScene.add(newMesh);
           setMesh(newMesh);
         } catch (e) {
-          console.error("❌ Error during STL parsing:", e);
+
         }
       },
       undefined,
-      (err) => console.error("❌ STL Load Error:", err)
+
     );
 
     const animate = () => {
@@ -137,7 +137,7 @@ function Viewer3D({ filename }) {
       }
       newRenderer.dispose();
     };
-  }, [filename, useColormap]);
+  }, [filename, useColormap, showSlices]);
 
   useEffect(() => {
     if (!mesh) return;
@@ -155,7 +155,7 @@ function Viewer3D({ filename }) {
         ? new THREE.MeshPhongMaterial({ vertexColors: true })
         : new THREE.MeshNormalMaterial();
     }
-  }, [showSlices, sliceColor, useColormap]);
+  }, [showSlices, sliceColor, useColormap, mesh]);
 
   useEffect(() => {
     planes.current[0].constant = sliceX;
@@ -164,7 +164,7 @@ function Viewer3D({ filename }) {
     if (renderer && scene && camera) {
       renderer.render(scene, camera);
     }
-  }, [sliceX, sliceY, sliceZ]);
+  }, [sliceX, sliceY, sliceZ, renderer, scene, camera]);
 
   const toggleSlices = () => {
     setShowSlices((prev) => !prev);

@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import FileUploader from "./components/FileUploader";
-import Viewer3D_old from "./components/Viewer3D_old";
 import Viewer3D from "./components/Viewer3D";
 
 function App() {
