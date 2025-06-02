@@ -105,7 +105,7 @@ function Viewer3D({ filename }) {
           newScene.add(newMesh);
           setMesh(newMesh);
         } catch (e) {
-
+             throw new Error("Invalid STL geometry: no position attribute");
         }
       },
       undefined,
