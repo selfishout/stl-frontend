@@ -61,7 +61,8 @@ function Viewer3D({ filename }) {
 
     const loader = new STLLoader();
     loader.load(
-      `http://localhost:8000/uploads/${filename}`,
+        // `http://localhost:8000/uploads/${filename}`
+      `https://stl-backend-ipt7.onrender.com/uploads/${filename}`,
       (geometry) => {
         try {
           geometry.computeVertexNormals();
