@@ -128,15 +128,17 @@ function Viewer3D({ filename }) {
     };
     window.addEventListener("resize", handleResize);
 
+    const currentMount = mountRef.current;
+
     return () => {
-      window.removeEventListener("resize", handleResize);
-      if (mountRef.current) {
-        while (mountRef.current.firstChild) {
-          mountRef.current.removeChild(mountRef.current.firstChild);
+      if (currentMount) {
+        while (currentMount.firstChild) {
+          currentMount.removeChild(currentMount.firstChild);
         }
       }
       newRenderer.dispose();
     };
+
   }, [filename, useColormap, showSlices]);
 
   useEffect(() => {
