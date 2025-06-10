@@ -17,8 +17,9 @@ function FileUploader({ onUploadSuccess }) {
     formData.append("file", file);
 
     try {
-      // const res = await axios.post("http://localhost:8000/upload", formData); // Replace with Render URL for prod
-      const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload", formData);
+      const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload", formData); // Replace with Render URL for prod
+      // "http://localhost:8000/upload"
+      // const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload", formData);
       setUploadStatus("done");
       onUploadSuccess(res.data.filename);
 
