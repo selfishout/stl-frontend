@@ -14,10 +14,9 @@ function colormap(value, min, max) {
   return color;
 }
 
-function Viewer3D({ filename }) {
+function Viewer3D_old3({ filename }) {
   const mountRef = useRef();
-  const [sliceValue, setSliceValue] = useState(0);
-  const [sliceAxis, setSliceAxis] = useState("z");
+  const [sliceZ, setSliceZ] = useState(0);
   const [planeMesh, setPlaneMesh] = useState(null);
 
   useEffect(() => {
@@ -47,7 +46,7 @@ function Viewer3D({ filename }) {
     controls.enableDamping = true;
 
     const loader = new STLLoader();
-    loader.load(`https://stl-backend-ipt7.onrender.com/uploads/${filename}`, (geometry) => {
+    loader.load(`http://localhost:8000/uploads/${filename}`, (geometry) => {
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
       const center = new THREE.Vector3();
@@ -62,7 +61,34 @@ function Viewer3D({ filename }) {
       mesh.scale.set(scale, scale, scale);
       scene.add(mesh);
 
-      createSlicePlane(sliceAxis, sliceValue, scene, setPlaneMesh);
+      const planeSize = 100;
+      const resolution = 64;
+      const data = new Uint8Array(resolution * resolution * 3);
+
+      const minVal = -3, maxVal = 3;
+      for (let i = 0; i < resolution; i++) {
+        for (let j = 0; j < resolution; j++) {
+          const x = (i / resolution - 0.5) * planeSize;
+          const y = (j / resolution - 0.5) * planeSize;
+          const z = sliceZ;
+          const val = generateMockScalarField(x, y, z);
+          const color = colormap(val, minVal, maxVal);
+          const index = (j * resolution + i) * 3;
+          data[index] = color.r * 255;
+          data[index + 1] = color.g * 255;
+          data[index + 2] = color.b * 255;
+        }
+      }
+
+      const texture = new THREE.DataTexture(data, resolution, resolution, THREE.RGBFormat);
+      texture.needsUpdate = true;
+
+      const sliceMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+      const sliceGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+      const slicePlane = new THREE.Mesh(sliceGeo, sliceMaterial);
+      slicePlane.position.set(0, 0, sliceZ);
+      scene.add(slicePlane);
+      setPlaneMesh(slicePlane);
     });
 
     const animate = () => {
@@ -90,84 +116,25 @@ function Viewer3D({ filename }) {
 
   useEffect(() => {
     if (planeMesh) {
-      if (sliceAxis === "x") {
-        planeMesh.rotation.set(0, Math.PI / 2, 0);
-        planeMesh.position.set(sliceValue, 0, 0);
-      } else if (sliceAxis === "y") {
-        planeMesh.rotation.set(Math.PI / 2, 0, 0);
-        planeMesh.position.set(0, sliceValue, 0);
-      } else {
-        planeMesh.rotation.set(0, 0, 0);
-        planeMesh.position.set(0, 0, sliceValue);
-      }
+      planeMesh.position.set(0, 0, sliceZ);
     }
-  }, [sliceValue, sliceAxis, planeMesh]);
-
-  const createSlicePlane = (axis, value, scene, setPlane) => {
-    const planeSize = 100;
-    const resolution = 64;
-    const data = new Uint8Array(resolution * resolution * 3);
-    const minVal = -3, maxVal = 3;
-
-    for (let i = 0; i < resolution; i++) {
-      for (let j = 0; j < resolution; j++) {
-        const u = (i / resolution - 0.5) * planeSize;
-        const v = (j / resolution - 0.5) * planeSize;
-        let x = 0, y = 0, z = 0;
-        if (axis === "x") {
-          x = value; y = u; z = v;
-        } else if (axis === "y") {
-          x = u; y = value; z = v;
-        } else {
-          x = u; y = v; z = value;
-        }
-        const val = generateMockScalarField(x, y, z);
-        const color = colormap(val, minVal, maxVal);
-        const index = (j * resolution + i) * 3;
-        data[index] = color.r * 255;
-        data[index + 1] = color.g * 255;
-        data[index + 2] = color.b * 255;
-      }
-    }
-
-    const texture = new THREE.DataTexture(data, resolution, resolution, THREE.RGBFormat);
-    texture.needsUpdate = true;
-
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.75,
-    });
-    const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
-    const plane = new THREE.Mesh(geometry, material);
-
-    scene.add(plane);
-    setPlane(plane);
-  };
+  }, [sliceZ, planeMesh]);
 
   return (
     <div>
       <div ref={mountRef} style={{ width: "100%", height: "500px" }} />
       <div style={{ marginTop: "10px" }}>
-        <label>Slice Axis:</label>
-        <select value={sliceAxis} onChange={(e) => setSliceAxis(e.target.value)}>
-          <option value="x">X</option>
-          <option value="y">Y</option>
-          <option value="z">Z</option>
-        </select>
-        <br />
-        <label>Slice Position:</label>
+        <label>Slice Z:</label>
         <input
           type="range"
           min={-50}
           max={50}
-          value={sliceValue}
-          onChange={(e) => setSliceValue(Number(e.target.value))}
+          value={sliceZ}
+          onChange={(e) => setSliceZ(Number(e.target.value))}
         />
       </div>
     </div>
   );
 }
 
-export default Viewer3D;
+export default Viewer3D_old3;

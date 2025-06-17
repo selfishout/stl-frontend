@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import FileUploader from "./components/FileUploader";
-import Viewer3D from "./components/Viewer3D";
+import Viewer3D_old3 from "./components/Viewer3D";
 
 function App() {
   const [filename, setFilename] = useState(null);
@@ -12,7 +12,7 @@ function App() {
         <FileUploader onUploadSuccess={setFilename} />
       </div>
       <div style={{ flexGrow: 1, padding: "20px" }}>
-        {filename ? <Viewer3D filename={filename} /> : <p>No file uploaded yet.</p>}
+        {filename ? <Viewer3D_old3 filename={filename} /> : <p>No file uploaded yet.</p>}
       </div>
     </div>
   );
