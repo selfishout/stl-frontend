@@ -14,55 +14,42 @@ function colormap(value, min, max) {
   return color;
 }
 
-function Viewer3D({ filename }) {
+function Viewer3D_old4_correctly_completed({ filename }) {
   const mountRef = useRef();
-  const [sliceAxis, setSliceAxis] = useState("z");
   const [sliceValue, setSliceValue] = useState(0);
-
-  const sceneRef = useRef();
-  const cameraRef = useRef();
-  const rendererRef = useRef();
-  const controlsRef = useRef();
-  const stlMeshRef = useRef();
-  const slicePlaneRef = useRef();
-  const clippingPlanesRef = useRef([]);
+  const [sliceAxis, setSliceAxis] = useState("z");
+  const [planeMesh, setPlaneMesh] = useState(null);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!filename || !mount) return;
     while (mount.firstChild) mount.removeChild(mount.firstChild);
 
+    let renderer;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf0f0f0);
+
     const width = mount.clientWidth;
     const height = mount.clientHeight;
-
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
     camera.position.set(0, 0, 100);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
-    renderer.localClippingEnabled = true;
     mount.appendChild(renderer.domElement);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 1);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(1, 1, 1);
     scene.add(ambientLight, directionalLight);
 
-    sceneRef.current = scene;
-    cameraRef.current = camera;
-    rendererRef.current = renderer;
-    controlsRef.current = controls;
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
 
     const loader = new STLLoader();
     loader.load(`https://stl-backend-ipt7.onrender.com/uploads/${filename}`, (geometry) => {
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
-
       const center = new THREE.Vector3();
       geometry.boundingBox.getCenter(center);
       geometry.translate(-center.x, -center.y, -center.z);
@@ -70,19 +57,12 @@ function Viewer3D({ filename }) {
       const radius = geometry.boundingSphere.radius;
       const scale = 50 / radius;
 
-      const material = new THREE.MeshNormalMaterial({
-        side: THREE.DoubleSide,
-        clippingPlanes: [],
-        clipShadows: true,
-      });
-
+      const material = new THREE.MeshNormalMaterial({ wireframe: false });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.scale.set(scale, scale, scale);
-
       scene.add(mesh);
-      stlMeshRef.current = mesh;
 
-      createOrUpdateSlicePlane();
+      createSlicePlane(sliceAxis, sliceValue, scene, setPlaneMesh);
     });
 
     const animate = () => {
@@ -104,112 +84,90 @@ function Viewer3D({ filename }) {
     return () => {
       window.removeEventListener("resize", handleResize);
       if (renderer) renderer.dispose();
+      while (mount.firstChild) mount.removeChild(mount.firstChild);
     };
   }, [filename]);
 
   useEffect(() => {
-    if (stlMeshRef.current) {
-      createOrUpdateSlicePlane();
+    if (planeMesh) {
+      if (sliceAxis === "x") {
+        planeMesh.rotation.set(0, Math.PI / 2, 0);
+        planeMesh.position.set(sliceValue, 0, 0);
+      } else if (sliceAxis === "y") {
+        planeMesh.rotation.set(Math.PI / 2, 0, 0);
+        planeMesh.position.set(0, sliceValue, 0);
+      } else {
+        planeMesh.rotation.set(0, 0, 0);
+        planeMesh.position.set(0, 0, sliceValue);
+      }
     }
-  }, [sliceAxis, sliceValue]);
+  }, [sliceValue, sliceAxis, planeMesh]);
 
-  function createOrUpdateSlicePlane() {
-    const scene = sceneRef.current;
-    const mesh = stlMeshRef.current;
-    const renderer = rendererRef.current;
-
-    if (!scene || !mesh || !renderer) return;
-
-    if (slicePlaneRef.current) {
-      scene.remove(slicePlaneRef.current);
-      slicePlaneRef.current.geometry.dispose();
-      slicePlaneRef.current.material.dispose();
-    }
-
-    const size = 100;
+  const createSlicePlane = (axis, value, scene, setPlane) => {
+    const planeSize = 100;
     const resolution = 64;
     const data = new Uint8Array(resolution * resolution * 3);
     const minVal = -3, maxVal = 3;
 
     for (let i = 0; i < resolution; i++) {
       for (let j = 0; j < resolution; j++) {
-        const a = (i / resolution - 0.5) * size;
-        const b = (j / resolution - 0.5) * size;
+        const u = (i / resolution - 0.5) * planeSize;
+        const v = (j / resolution - 0.5) * planeSize;
         let x = 0, y = 0, z = 0;
-        if (sliceAxis === "z") {
-          x = a; y = b; z = sliceValue;
-        } else if (sliceAxis === "x") {
-          x = sliceValue; y = a; z = b;
+        if (axis === "x") {
+          x = value; y = u; z = v;
+        } else if (axis === "y") {
+          x = u; y = value; z = v;
         } else {
-          x = a; y = sliceValue; z = b;
+          x = u; y = v; z = value;
         }
         const val = generateMockScalarField(x, y, z);
         const color = colormap(val, minVal, maxVal);
-        const idx = (j * resolution + i) * 3;
-        data[idx] = color.r * 255;
-        data[idx + 1] = color.g * 255;
-        data[idx + 2] = color.b * 255;
+        const index = (j * resolution + i) * 3;
+        data[index] = color.r * 255;
+        data[index + 1] = color.g * 255;
+        data[index + 2] = color.b * 255;
       }
     }
 
     const texture = new THREE.DataTexture(data, resolution, resolution, THREE.RGBFormat);
     texture.needsUpdate = true;
 
-    const mat = new THREE.MeshBasicMaterial({
+    const material = new THREE.MeshBasicMaterial({
       map: texture,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.7
+      opacity: 0.75,
     });
-    const geo = new THREE.PlaneGeometry(size, size);
-    const plane = new THREE.Mesh(geo, mat);
-    if (sliceAxis === "z") plane.position.set(0, 0, sliceValue);
-    else if (sliceAxis === "x") {
-      plane.rotation.y = Math.PI / 2;
-      plane.position.set(sliceValue, 0, 0);
-    } else {
-      plane.rotation.x = Math.PI / 2;
-      plane.position.set(0, sliceValue, 0);
-    }
+    const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
+    const plane = new THREE.Mesh(geometry, material);
 
     scene.add(plane);
-    slicePlaneRef.current = plane;
-
-    const normal = new THREE.Vector3(
-      sliceAxis === "x" ? -1 : 0,
-      sliceAxis === "y" ? -1 : 0,
-      sliceAxis === "z" ? -1 : 0
-    );
-    const planeClip = new THREE.Plane(normal, sliceValue);
-    clippingPlanesRef.current = [planeClip];
-    mesh.material.clippingPlanes = clippingPlanesRef.current;
-  }
+    setPlane(plane);
+  };
 
   return (
     <div>
       <div ref={mountRef} style={{ width: "100%", height: "500px" }} />
       <div style={{ marginTop: "10px" }}>
-        <label>Plane: </label>
-        <select
-          value={sliceAxis}
-          onChange={(e) => setSliceAxis(e.target.value)}
-        >
+        <label>Slice Axis:</label>
+        <select value={sliceAxis} onChange={(e) => setSliceAxis(e.target.value)}>
           <option value="x">X</option>
           <option value="y">Y</option>
           <option value="z">Z</option>
         </select>
+        <br />
+        <label>Slice Position:</label>
         <input
           type="range"
           min={-50}
           max={50}
-          step={1}
           value={sliceValue}
           onChange={(e) => setSliceValue(Number(e.target.value))}
-          style={{ width: "200px", marginLeft: "10px" }}
         />
       </div>
     </div>
   );
 }
 
-export default Viewer3D;
+export default Viewer3D_old4_correctly_completed;
