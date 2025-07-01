@@ -3,35 +3,10 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
-// Hardcoded points and property values (converted from .ou)
-const dataPoints = [
-  [2.75, 3.0556, 0.36],
-  [3.875, -0.2037, 6.12],
-  [1.0625, 4.6852, 4.68],
-  [3.3125, -3.4630, 3.24],
-  [-1.1875, 0.2037, 5.04],
-  [-1.5, -3.2, 2.5],
-  [-2.0, 1.2, 4.0],
-  [0.0, 0.0, 3.0],
-  [1.0, -1.0, 4.0],
-  [2.5, 2.0, 5.5]
-];
-const propertyValues = [-0.0713, -0.3984, -0.2138, -0.5433, -2.0277, -1.512, -0.75, -0.21, -1.05, -0.98];
-
-// Interpolation function (JS version of C++ ave3D)
-function interpolateProperty(target, k = 4) {
-  const distances = dataPoints.map((p, i) => {
-    const d2 = (p[0] - target[0]) ** 2 + (p[1] - target[1]) ** 2 + (p[2] - target[2]) ** 2;
-    return { i, d2 };
-  });
-
-  distances.sort((a, b) => a.d2 - b.d2);
-  let result = 0;
-  for (let j = 0; j < k; j++) result += propertyValues[distances[j].i];
-  return result / k;
+function generateMockScalarField(x, y, z) {
+  return Math.sin(x * 0.1) + Math.cos(y * 0.1) + Math.sin(z * 0.1);
 }
 
-// Convert value to color
 function colormap(value, min, max) {
   const t = (value - min) / (max - min);
   const color = new THREE.Color();
@@ -84,8 +59,6 @@ function Viewer3D({ filename }) {
     controlsRef.current = controls;
 
     const loader = new STLLoader();
-
-    // `http://localhost:8000/uploads/${filename}`
     loader.load(`https://stl-backend-ipt7.onrender.com/uploads/${filename}`, (geometry) => {
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
@@ -156,7 +129,7 @@ function Viewer3D({ filename }) {
     const size = 100;
     const resolution = 64;
     const data = new Uint8Array(resolution * resolution * 3);
-    const minVal = -2.5, maxVal = 0;
+    const minVal = -3, maxVal = 3;
 
     for (let i = 0; i < resolution; i++) {
       for (let j = 0; j < resolution; j++) {
@@ -170,8 +143,7 @@ function Viewer3D({ filename }) {
         } else {
           x = a; y = sliceValue; z = b;
         }
-
-        const val = interpolateProperty([x, y, z]);
+        const val = generateMockScalarField(x, y, z);
         const color = colormap(val, minVal, maxVal);
         const idx = (j * resolution + i) * 3;
         data[idx] = color.r * 255;
@@ -187,13 +159,10 @@ function Viewer3D({ filename }) {
       map: texture,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.3,
-      depthWrite: false
+      opacity: 0.7
     });
     const geo = new THREE.PlaneGeometry(size, size);
     const plane = new THREE.Mesh(geo, mat);
-    plane.rotation.set(0, 0, 0);
-
     if (sliceAxis === "z") plane.position.set(0, 0, sliceValue);
     else if (sliceAxis === "x") {
       plane.rotation.y = Math.PI / 2;
@@ -206,7 +175,6 @@ function Viewer3D({ filename }) {
     scene.add(plane);
     slicePlaneRef.current = plane;
 
-    // Set clipping to remove mesh beyond slice plane
     const normal = new THREE.Vector3(
       sliceAxis === "x" ? -1 : 0,
       sliceAxis === "y" ? -1 : 0,
@@ -222,7 +190,10 @@ function Viewer3D({ filename }) {
       <div ref={mountRef} style={{ width: "100%", height: "500px" }} />
       <div style={{ marginTop: "10px" }}>
         <label>Plane: </label>
-        <select value={sliceAxis} onChange={(e) => setSliceAxis(e.target.value)}>
+        <select
+          value={sliceAxis}
+          onChange={(e) => setSliceAxis(e.target.value)}
+        >
           <option value="x">X</option>
           <option value="y">Y</option>
           <option value="z">Z</option>
