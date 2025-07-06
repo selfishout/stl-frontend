@@ -8,6 +8,7 @@ function Viewer3D() {
   const [sliceAxis, setSliceAxis] = useState("z");
   const [sliceValue, setSliceValue] = useState(0);
   const [stlFile, setStlFile] = useState(null);
+  const [stlUrl, setStlUrl] = useState(null);
 
   const sceneRef = useRef();
   const cameraRef = useRef();
@@ -19,9 +20,14 @@ function Viewer3D() {
   const ouDataRef = useRef([]);
 
   function interpolate(target, points, values, k = 4) {
-    const dists = points.map((p, i) => ({ i, d2: p.reduce((s, v, j) => s + (v - target[j]) ** 2, 0) }));
+    const dists = points.map((p, i) => ({
+      i,
+      d2: p.reduce((s, v, j) => s + (v - target[j]) ** 2, 0),
+    }));
     dists.sort((a, b) => a.d2 - b.d2);
-    return dists.slice(0, k).reduce((acc, { i }) => acc + values[i], 0) / k;
+    return (
+      dists.slice(0, k).reduce((acc, { i }) => acc + values[i], 0) / k
+    );
   }
 
   function colormap(value, min, max) {
@@ -39,8 +45,8 @@ function Viewer3D() {
     const resolution = 128;
     const size = 100;
     const data = new Uint8Array(resolution * resolution * 3);
-    const points = ouDataRef.current.map(p => p.slice(0, 3));
-    const values = ouDataRef.current.map(p => p[3]);
+    const points = ouDataRef.current.map((p) => p.slice(0, 3));
+    const values = ouDataRef.current.map((p) => p[3]);
 
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
@@ -49,7 +55,9 @@ function Viewer3D() {
       for (let j = 0; j < resolution; j++) {
         const a = (i / resolution - 0.5) * size;
         const b = (j / resolution - 0.5) * size;
-        let x = 0, y = 0, z = 0;
+        let x = 0,
+          y = 0,
+          z = 0;
         if (sliceAxis === "z") [x, y, z] = [a, b, sliceValue];
         else if (sliceAxis === "x") [x, y, z] = [sliceValue, a, b];
         else [x, y, z] = [a, sliceValue, b];
@@ -99,22 +107,25 @@ function Viewer3D() {
     const formData = new FormData();
     formData.append("stl", file);
 
-    const res = await fetch("http://localhost:5000/generate-ou", {
+    const res = await fetch("https://stl-backend-ipt7.onrender.com/generate-ou", {
       method: "POST",
       body: formData,
     });
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "OU generation failed");
 
-    const ouRes = await fetch(`http://localhost:5000/uploads/ou/generated_points.ou`);
+    setStlUrl(`https://stl-backend-ipt7.onrender.com${data.stl_url}`);
+
+    const ouRes = await fetch(`https://stl-backend-ipt7.onrender.com${data.ou_url}`);
     const text = await ouRes.text();
-    const parsed = text.trim().split("\n").map(line => line.split(/\s+/).map(Number));
+    const parsed = text.trim().split("\n").map((line) => line.split(/\s+/).map(Number));
     ouDataRef.current = parsed;
   }
 
   useEffect(() => {
     const mount = mountRef.current;
-    if (!mount || !stlFile) return;
+    if (!mount || !stlUrl) return;
     while (mount.firstChild) mount.removeChild(mount.firstChild);
 
     const scene = new THREE.Scene();
@@ -143,7 +154,7 @@ function Viewer3D() {
     controlsRef.current = controls;
 
     const loader = new STLLoader();
-    loader.load(URL.createObjectURL(stlFile), geometry => {
+    loader.load(stlUrl, (geometry) => {
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
 
@@ -152,7 +163,10 @@ function Viewer3D() {
       geometry.translate(-center.x, -center.y, -center.z);
 
       const scale = 50 / geometry.boundingSphere.radius;
-      const mesh = new THREE.Mesh(geometry, new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }));
+      const mesh = new THREE.Mesh(
+        geometry,
+        new THREE.MeshNormalMaterial({ side: THREE.DoubleSide })
+      );
       mesh.scale.set(scale, scale, scale);
       scene.add(mesh);
       stlMeshRef.current = mesh;
@@ -174,7 +188,7 @@ function Viewer3D() {
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [stlFile]);
+  }, [stlUrl]);
 
   useEffect(() => {
     if (stlMeshRef.current && ouDataRef.current.length > 0) {
