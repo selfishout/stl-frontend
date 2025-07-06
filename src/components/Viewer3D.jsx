@@ -103,11 +103,13 @@ function Viewer3D() {
     slicePlaneRef.current = plane;
   }
 
+
+  const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:8000";
   async function uploadAndGenerateOU(file) {
     const formData = new FormData();
     formData.append("stl", file);
 
-    const res = await fetch("https://stl-backend-ipt7.onrender.com/generate-ou", {
+    const res = await fetch(`${API_BASE}/upload_stl/`, {
       method: "POST",
       body: formData,
     });
@@ -115,11 +117,9 @@ function Viewer3D() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "OU generation failed");
 
-    setStlUrl(`https://stl-backend-ipt7.onrender.com${data.stl_url}`);
-
-    const ouRes = await fetch(`https://stl-backend-ipt7.onrender.com${data.ou_url}`);
+    const ouRes = await fetch(`${API_BASE}${data.ou_url}`);
     const text = await ouRes.text();
-    const parsed = text.trim().split("\n").map((line) => line.split(/\s+/).map(Number));
+    const parsed = text.trim().split("\n").map(line => line.split(/\s+/).map(Number));
     ouDataRef.current = parsed;
   }
 
