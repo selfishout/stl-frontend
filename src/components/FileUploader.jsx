@@ -17,11 +17,9 @@ function FileUploader({ onUploadSuccess }) {
     formData.append("file", file);
 
     try {
-      const res = await axios.post("http://localhost:8000/upload", formData); // Replace with Render URL for prod
-      // "http://localhost:8000/upload"
-      // const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload", formData);
+      const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload_stl/", formData);
       setUploadStatus("done");
-      onUploadSuccess(res.data.filename);
+      onUploadSuccess(res.data.stl_url);
 
       // Hide modal after 2 seconds
       setTimeout(() => setShowModal(false), 2000);
