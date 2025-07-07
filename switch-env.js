@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const configPath = path.join(__dirname, 'frontend', 'src', 'config.js');
+const configPath = path.join(__dirname, 'src', 'config.js');
 
 function switchEnvironment(env) {
   if (!['local', 'render'].includes(env)) {

@@ -1,9 +1,9 @@
 // Environment configuration - change this one variable to switch between environments
-const USE_RENDER = false; // Set to true for Render, false for localhost
+const USE_RENDER = true; // Set to true for Render, false for localhost
 
 // Base URLs for different environments
 const LOCAL_BASE_URL = 'http://localhost:8000';
-const RENDER_BASE_URL = 'https://stl-dashboard-backend.onrender.com'; // Replace with your actual Render URL
+const RENDER_BASE_URL = 'https://stl-backend-ipt7.onrender.com'; // Your actual Render backend URL
 
 // Export the active configuration
 export const config = {
