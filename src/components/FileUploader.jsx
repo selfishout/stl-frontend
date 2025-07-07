@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import axios from "axios";
 import "./UploaderModal.css"; // Add custom styles here
+import { getApiUrl, API_ENDPOINTS } from "../config";
 
 function FileUploader({ onUploadSuccess }) {
   const [showModal, setShowModal] = useState(false);
@@ -17,7 +18,7 @@ function FileUploader({ onUploadSuccess }) {
     formData.append("file", file);
 
     try {
-      const res = await axios.post("https://stl-backend-ipt7.onrender.com/upload_stl/", formData);
+      const res = await axios.post(getApiUrl(API_ENDPOINTS.upload), formData);
       setUploadStatus("done");
       onUploadSuccess(res.data.stl_url);
 

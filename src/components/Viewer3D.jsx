@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import {kdTree} from 'kd-tree-javascript';
+import { getApiUrl, API_ENDPOINTS } from "../config";
 
 function Viewer3D({ filename }) {
   const mountRef = useRef();
@@ -15,7 +15,7 @@ function Viewer3D({ filename }) {
   const slicePlanesRef = useRef({ x: null, y: null, z: null });
   const ouDataRef = useRef([]);
   const [sliceValues, setSliceValues] = useState({ x: 0, y: 0, z: 0 });
-  const [showSlices, setShowSlices] = useState({ x: true, y: true, z: true });
+  const [activeSlice, setActiveSlice] = useState("x"); // Only one slice active at a time
   const updateTimeoutRef = useRef(null);
 
   // Professor's interpolation function
@@ -40,90 +40,260 @@ function Viewer3D({ filename }) {
     return result / Math.min(n, dist.length);
   }
 
-  const createSlicePlane = useCallback((axis) => {
-    if (!sceneRef.current || !ouDataRef.current.length) return;
+  // Create colormap texture from interpolated values with object mask
+  function createColormapTexture(values, width, height, objectMask) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(width, height);
+    
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const range = maxVal - minVal;
+    
+    for (let i = 0; i < values.length; i++) {
+      const pixelIndex = i * 4;
+      const normalizedValue = range > 0 ? (values[i] - minVal) / range : 0;
+      
+      // Check if this pixel is inside the object mask
+      const isInside = objectMask[i];
+      
+      if (isInside) {
+        // Create heatmap colormap: Blue -> Cyan -> Green -> Yellow -> Red
+        let red, green, blue;
+        if (normalizedValue < 0.25) {
+          // Blue to Cyan
+          const t = normalizedValue / 0.25;
+          red = 0;
+          green = Math.floor(t * 255);
+          blue = 255;
+        } else if (normalizedValue < 0.5) {
+          // Cyan to Green
+          const t = (normalizedValue - 0.25) / 0.25;
+          red = 0;
+          green = 255;
+          blue = Math.floor((1 - t) * 255);
+        } else if (normalizedValue < 0.75) {
+          // Green to Yellow
+          const t = (normalizedValue - 0.5) / 0.25;
+          red = Math.floor(t * 255);
+          green = 255;
+          blue = 0;
+        } else {
+          // Yellow to Red
+          const t = (normalizedValue - 0.75) / 0.25;
+          red = 255;
+          green = Math.floor((1 - t) * 255);
+          blue = 0;
+        }
+        
+        imageData.data[pixelIndex] = red;     // R
+        imageData.data[pixelIndex + 1] = green; // G
+        imageData.data[pixelIndex + 2] = blue;  // B
+        imageData.data[pixelIndex + 3] = 255;   // A (opaque)
+      } else {
+        // Outside the object - make transparent
+        imageData.data[pixelIndex] = 0;     // R
+        imageData.data[pixelIndex + 1] = 0; // G
+        imageData.data[pixelIndex + 2] = 0; // B
+        imageData.data[pixelIndex + 3] = 0;   // A (transparent)
+      }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
 
+  // Create object mask for the slice plane
+  function createObjectMask(axis, value, stlGeometry, gridSize, halfSize, center) {
+    const mask = new Array(gridSize * gridSize).fill(false);
+    
+    // Create a temporary mesh for intersection testing
+    const tempMesh = new THREE.Mesh(stlGeometry);
+    
+    // Create a plane geometry for intersection
+    const planeGeometry = new THREE.PlaneGeometry(halfSize * 2, halfSize * 2);
+    if (axis === 'x') {
+      planeGeometry.rotateY(Math.PI / 2);
+    } else if (axis === 'y') {
+      planeGeometry.rotateX(Math.PI / 2);
+    }
+    
+    const planeMesh = new THREE.Mesh(planeGeometry);
+    if (axis === 'x') {
+      planeMesh.position.set(value, center.y, center.z);
+    } else if (axis === 'y') {
+      planeMesh.position.set(center.x, value, center.z);
+    } else { // z
+      planeMesh.position.set(center.x, center.y, value);
+    }
+    
+    // Use a more efficient approach: sample points and check if they're inside
+    // We'll use a sparse sampling approach to create the mask
+    const sampleStep = Math.max(1, Math.floor(gridSize / 32)); // Sample every few pixels
+    
+    for (let i = 0; i < gridSize; i += sampleStep) {
+      for (let j = 0; j < gridSize; j += sampleStep) {
+        const u = (i / (gridSize - 1) - 0.5) * halfSize * 2;
+        const v = (j / (gridSize - 1) - 0.5) * halfSize * 2;
+        
+        let x, y, z;
+        if (axis === 'x') {
+          x = value;
+          y = center.y + u;
+          z = center.z + v;
+        } else if (axis === 'y') {
+          x = center.x + u;
+          y = value;
+          z = center.z + v;
+        } else { // z
+          x = center.x + u;
+          y = center.y + v;
+          z = value;
+        }
+        
+        // Simple distance-based check (much faster than raycasting)
+        const point = new THREE.Vector3(x, y, z);
+        const distance = tempMesh.geometry.boundingSphere.distanceToPoint(point);
+        const isInside = distance <= tempMesh.geometry.boundingSphere.radius * 0.8; // Conservative estimate
+        
+        // Fill the mask for this region
+        const startI = Math.max(0, i - sampleStep);
+        const endI = Math.min(gridSize, i + sampleStep);
+        const startJ = Math.max(0, j - sampleStep);
+        const endJ = Math.min(gridSize, j + sampleStep);
+        
+        for (let ii = startI; ii < endI; ii++) {
+          for (let jj = startJ; jj < endJ; jj++) {
+            const index = ii * gridSize + jj;
+            mask[index] = isInside;
+          }
+        }
+      }
+    }
+    
+    return mask;
+  }
+
+  // Create slice plane with heatmap (optimized version)
+  function createSlicePlane(axis, value, stlGeometry) {
+    if (!ouDataRef.current.length) return null;
+    
+    const points = ouDataRef.current.map(row => [row[0], row[1], row[2]]);
+    const properties = ouDataRef.current.map(row => row[3]);
+    
+    // Calculate plane bounds based on STL geometry - restore original large size
+    const stlBounds = new THREE.Box3().setFromObject(new THREE.Mesh(stlGeometry));
+    const size = stlBounds.getSize(new THREE.Vector3());
+    const center = stlBounds.getCenter(new THREE.Vector3());
+    
+    // Use much larger size for the plane (original large size)
+    const halfSize = Math.max(size.x, size.y, size.z) * 2.0;
+    
+    // Use higher resolution for better heatmap quality with larger plane
+    const gridSize = 150;
+    const gridValues = [];
+    
+    for (let i = 0; i < gridSize; i++) {
+      for (let j = 0; j < gridSize; j++) {
+        const u = (i / (gridSize - 1) - 0.5) * halfSize * 2;
+        const v = (j / (gridSize - 1) - 0.5) * halfSize * 2;
+        
+        let x, y, z;
+        if (axis === 'x') {
+          x = value;
+          y = center.y + u;
+          z = center.z + v;
+        } else if (axis === 'y') {
+          x = center.x + u;
+          y = value;
+          z = center.z + v;
+        } else { // z
+          x = center.x + u;
+          y = center.y + v;
+          z = value;
+        }
+        
+        // Interpolate property value at this grid point
+        const interpolatedValue = ave3D(points, properties, [x, y, z], 5);
+        gridValues.push(interpolatedValue);
+      }
+    }
+    
+    // Create object mask
+    const objectMask = createObjectMask(axis, value, stlGeometry, gridSize, halfSize, center);
+    
+    // Create heatmap texture with mask
+    const texture = createColormapTexture(gridValues, gridSize, gridSize, objectMask);
+    
+    // Create plane geometry (same size as before)
+    const planeGeometry = new THREE.PlaneGeometry(halfSize * 2, halfSize * 2);
+    
+    // Adjust plane orientation based on axis
+    if (axis === 'x') {
+      planeGeometry.rotateY(Math.PI / 2);
+    } else if (axis === 'y') {
+      planeGeometry.rotateX(Math.PI / 2);
+    }
+    
+    // Create material with the heatmap texture and proper opacity
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    
+    const plane = new THREE.Mesh(planeGeometry, material);
+    
+    // Position the plane
+    if (axis === 'x') {
+      plane.position.set(value, center.y, center.z);
+    } else if (axis === 'y') {
+      plane.position.set(center.x, value, center.z);
+    } else { // z
+      plane.position.set(center.x, center.y, value);
+    }
+    
+    return plane;
+  }
+
+  const createSlicePlaneCallback = useCallback((axis) => {
     const scene = sceneRef.current;
     const sliceValue = sliceValues[axis];
+    
+    if (!scene || !ouDataRef.current.length || !stlMeshRef.current) return;
 
-    // Remove existing slice plane for this axis
+    // Only create slice plane for the active axis
+    if (axis !== activeSlice) return;
+
+    // Remove existing slice plane
     if (slicePlanesRef.current[axis]) {
       scene.remove(slicePlanesRef.current[axis]);
       slicePlanesRef.current[axis].geometry.dispose();
       slicePlanesRef.current[axis].material.dispose();
+      if (slicePlanesRef.current[axis].material.map) {
+        slicePlanesRef.current[axis].material.map.dispose();
+      }
       slicePlanesRef.current[axis] = null;
     }
 
-    if (!showSlices[axis]) return;
-
-    // Reduce resolution for better performance
-    const resolution = 64; // Reduced from 128
-    const size = 100;
-    const data = new Uint8Array(resolution * resolution * 3);
+    // Create the slice plane using the new function
+    const plane = createSlicePlane(axis, sliceValue, stlMeshRef.current.geometry);
     
-    // Convert OU data to format expected by ave3D
-    const points = ouDataRef.current.map(p => [p[0], p[1], p[2]]);
-    const properties = ouDataRef.current.map(p => p[3]);
-
-    const values = properties;
-    const minVal = Math.min(...values);
-    const maxVal = Math.max(...values);
-
-    for (let i = 0; i < resolution; i++) {
-      for (let j = 0; j < resolution; j++) {
-        const a = (i / resolution - 0.5) * size;
-        const b = (j / resolution - 0.5) * size;
-        let x = 0, y = 0, z = 0;
-        if (axis === "z") [x, y, z] = [a, b, sliceValue];
-        else if (axis === "x") [x, y, z] = [sliceValue, a, b];
-        else [x, y, z] = [a, sliceValue, b];
-        
-        // Use professor's ave3D function for interpolation
-        const val = ave3D(points, properties, [x, y, z], 4);
-        const t = Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)));
-        
-        // Create red color scheme for physical properties (as requested by professor)
-        const color = new THREE.Color();
-        color.setRGB(t, 0, 0); // Red intensity based on property value
-        
-        const idx = (j * resolution + i) * 3;
-        data[idx] = color.r * 255;
-        data[idx + 1] = color.g * 255;
-        data[idx + 2] = color.b * 255;
-      }
+    if (plane) {
+      scene.add(plane);
+      slicePlanesRef.current[axis] = plane;
     }
-
-    const texture = new THREE.DataTexture(data, resolution, resolution, THREE.RGBFormat);
-    texture.needsUpdate = true;
-
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.4, // Made more transparent (was 0.8)
-      depthWrite: false,
-    });
-
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(size, size), material);
-    if (axis === "x") {
-      plane.rotation.y = Math.PI / 2;
-      plane.position.set(sliceValue, 0, 0);
-    } else if (axis === "y") {
-      plane.rotation.x = Math.PI / 2;
-      plane.position.set(0, sliceValue, 0);
-    } else {
-      plane.position.set(0, 0, sliceValue);
-    }
-
-    scene.add(plane);
-    slicePlanesRef.current[axis] = plane;
-  }, [sliceValues, showSlices]);
+  }, [sliceValues, activeSlice]);
 
   const updateAllSlicePlanes = useCallback(() => {
-    createSlicePlane("x");
-    createSlicePlane("y");
-    createSlicePlane("z");
-  }, [createSlicePlane]);
+    // Only update the active slice plane
+    createSlicePlaneCallback(activeSlice);
+  }, [createSlicePlaneCallback, activeSlice]);
 
   // Debounced update function
   const debouncedUpdate = useCallback(() => {
@@ -132,16 +302,17 @@ function Viewer3D({ filename }) {
     }
     updateTimeoutRef.current = setTimeout(() => {
       updateAllSlicePlanes();
-    }, 100); // 100ms delay
+    }, 50); // Reduced delay for better responsiveness
   }, [updateAllSlicePlanes]);
 
   async function loadOUData() {
     try {
-      const ouRes = await fetch("https://stl-backend-ipt7.onrender.com/uploads/ou/generated_points.ou");
+      const ouRes = await fetch(getApiUrl("/uploads/ou/generated_points.ou"));
       const text = await ouRes.text();
       const parsed = text.trim().split("\n").map(line => line.split(/\s+/).map(Number));
       ouDataRef.current = parsed;
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error("Failed to load OU data:", error);
     }
   }
@@ -178,16 +349,12 @@ function Viewer3D({ filename }) {
     rendererRef.current = renderer;
     controlsRef.current = controls;
 
-    // Create clipping planes for all three axes
-    const clippingPlanes = [
-      new THREE.Plane(new THREE.Vector3(1, 0, 0), -sliceValues.x),
-      new THREE.Plane(new THREE.Vector3(0, 1, 0), -sliceValues.y),
-      new THREE.Plane(new THREE.Vector3(0, 0, 1), -sliceValues.z)
-    ];
-    clippingPlaneRef.current = clippingPlanes;
+    // Create clipping plane for the active slice only
+    const clippingPlane = new THREE.Plane();
+    clippingPlaneRef.current = clippingPlane;
 
     const loader = new STLLoader();
-    loader.load(`https://stl-backend-ipt7.onrender.com${filename}`, geometry => {
+    loader.load(getApiUrl(filename), geometry => {
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
 
@@ -200,8 +367,10 @@ function Viewer3D({ filename }) {
         geometry,
         new THREE.MeshNormalMaterial({ 
           side: THREE.DoubleSide, 
-          clippingPlanes: clippingPlanes, 
-          clipShadows: true 
+          clippingPlanes: [clippingPlane], 
+          clipShadows: true,
+          transparent: true,
+          opacity: 0.8
         })
       );
       mesh.scale.set(scale, scale, scale);
@@ -229,22 +398,32 @@ function Viewer3D({ filename }) {
     return () => window.removeEventListener("resize", handleResize);
   }, [filename, updateAllSlicePlanes]);
 
-  // Update clipping planes when slice values change
+  // Update clipping plane when slice values or active slice change
   useEffect(() => {
     if (!clippingPlaneRef.current || !stlMeshRef.current) return;
     
-    const clippingPlanes = clippingPlaneRef.current;
-    clippingPlanes[0].constant = -sliceValues.x;
-    clippingPlanes[1].constant = -sliceValues.y;
-    clippingPlanes[2].constant = -sliceValues.z;
+    const clippingPlane = clippingPlaneRef.current;
+    const sliceValue = sliceValues[activeSlice];
+    
+    // Set clipping plane based on active slice
+    if (activeSlice === "x") {
+      clippingPlane.normal.set(1, 0, 0);
+      clippingPlane.constant = -sliceValue;
+    } else if (activeSlice === "y") {
+      clippingPlane.normal.set(0, 1, 0);
+      clippingPlane.constant = -sliceValue;
+    } else { // z
+      clippingPlane.normal.set(0, 0, 1);
+      clippingPlane.constant = -sliceValue;
+    }
     
     if (stlMeshRef.current.material) {
-      stlMeshRef.current.material.clippingPlanes = clippingPlanes;
+      stlMeshRef.current.material.clippingPlanes = [clippingPlane];
       stlMeshRef.current.material.needsUpdate = true;
     }
-  }, [sliceValues.x, sliceValues.y, sliceValues.z]);
+  }, [sliceValues, activeSlice]);
 
-  // Update slice planes when slice values or visibility change (debounced)
+  // Update slice planes when slice values or active slice change (debounced)
   useEffect(() => {
     debouncedUpdate();
   }, [debouncedUpdate]);
@@ -263,13 +442,14 @@ function Viewer3D({ filename }) {
       <div ref={mountRef} style={{ width: "100%", height: "500px" }} />
       <div style={{ marginTop: "10px" }}>
         <div style={{ marginBottom: "10px" }}>
-          <label style={{ marginRight: "10px" }}>Show Cross-Sections:</label>
+          <label style={{ marginRight: "10px" }}>Cross-Section Plane:</label>
           {["x", "y", "z"].map(axis => (
             <label key={axis} style={{ marginRight: "15px" }}>
               <input
-                type="checkbox"
-                checked={showSlices[axis]}
-                onChange={(e) => setShowSlices(prev => ({ ...prev, [axis]: e.target.checked }))}
+                type="radio"
+                name="sliceAxis"
+                checked={activeSlice === axis}
+                onChange={() => setActiveSlice(axis)}
                 style={{ marginRight: "5px" }}
               />
               {axis.toUpperCase()}
@@ -277,23 +457,19 @@ function Viewer3D({ filename }) {
           ))}
         </div>
         <div>
-          {["x", "y", "z"].map(axis => (
-            <div key={axis} style={{ marginBottom: "5px" }}>
-              <label style={{ display: "inline-block", width: "20px" }}>{axis.toUpperCase()}: </label>
-              <input
-                type="range"
-                min={-50}
-                max={50}
-                step={1}
-                value={sliceValues[axis]}
-                onChange={(e) => setSliceValues(prev => ({ ...prev, [axis]: Number(e.target.value) }))}
-                style={{ width: "150px", marginLeft: "10px" }}
-              />
-              <span style={{ marginLeft: "10px", fontFamily: "monospace" }}>
-                {sliceValues[axis]}
-              </span>
-            </div>
-          ))}
+          <label style={{ display: "inline-block", width: "20px" }}>{activeSlice.toUpperCase()}: </label>
+          <input
+            type="range"
+            min={-50}
+            max={50}
+            step={1}
+            value={sliceValues[activeSlice]}
+            onChange={(e) => setSliceValues(prev => ({ ...prev, [activeSlice]: Number(e.target.value) }))}
+            style={{ width: "150px", marginLeft: "10px" }}
+          />
+          <span style={{ marginLeft: "10px", fontFamily: "monospace" }}>
+            {sliceValues[activeSlice]}
+          </span>
         </div>
 
       </div>
@@ -302,3 +478,4 @@ function Viewer3D({ filename }) {
 }
 
 export default Viewer3D;
+
