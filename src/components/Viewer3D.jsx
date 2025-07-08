@@ -453,7 +453,7 @@ function Viewer3D({ filename }) {
         heatmapPlane.material.dispose();
       }
     };
-  }, [filename, sliceAxis, sliceValue, showSlice, showHeatmap, ouData]);
+  }, [filename, sliceAxis, sliceValue, showSlice, showHeatmap, ouData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
