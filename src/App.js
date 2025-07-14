@@ -9,7 +9,11 @@ function App() {
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "sans-serif" }}>
       <div style={{ width: "250px", padding: "20px", background: "#f8f8f8" }}>
         <h2>STL Dashboard</h2>
-        <FileUploader onUploadSuccess={setFilename} />
+        <FileUploader onUploadSuccess={(stlUrl) => {
+          // Extract just the filename from the full path
+          const filename = stlUrl.split('/').pop();
+          setFilename(filename);
+        }} />
       </div>
       <div style={{ flexGrow: 1, padding: "20px" }}>
         {filename ? <Viewer3D filename={filename} /> : <p>No file uploaded yet.</p>}

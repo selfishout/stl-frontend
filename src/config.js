@@ -1,5 +1,5 @@
 // Environment configuration - change this one variable to switch between environments
-const USE_RENDER = true; // Set to true for Render, false for localhost
+const USE_RENDER = false; // Set to true for Render, false for localhost
 
 // Base URLs for different environments
 const LOCAL_BASE_URL = 'http://localhost:8000';
@@ -13,9 +13,9 @@ export const config = {
 };
 
 // Helper function to get full API URL
-export const getApiUrl = (endpoint) => {
-  return `${config.baseURL}${endpoint}`;
-};
+export function getApiUrl(path) {
+  return `https://stl-backend-ipt7.onrender.com${path}`;
+}
 
 // Common API endpoints
 export const API_ENDPOINTS = {
