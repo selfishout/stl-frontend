@@ -227,6 +227,7 @@ function Viewer3D({ filename }) {
     }
     
     heatmapUpdateTimeout.current = setTimeout(() => {
+      console.log('Updating heatmap for slice:', sliceAxis, sliceValue, 'showHeatmap:', showHeatmap, 'ouData length:', ouData.length);
       if (showHeatmap && ouData.length > 0 && window.existingScene) {
         const existingHeatmap = window.existingScene.getObjectByName("heatmap-plane");
         if (existingHeatmap) {
@@ -479,6 +480,14 @@ function Viewer3D({ filename }) {
             heatmapPlane.userData.pickable = false; // Prevent interference with controls
             
             window.existingScene.add(heatmapPlane);
+          }
+        } else {
+          // Remove heatmap plane if no texture was created (no intersection)
+          const existingHeatmap = window.existingScene.getObjectByName("heatmap-plane");
+          if (existingHeatmap) {
+            window.existingScene.remove(existingHeatmap);
+            existingHeatmap.geometry.dispose();
+            existingHeatmap.material.dispose();
           }
         }
       }
@@ -967,7 +976,7 @@ function Viewer3D({ filename }) {
     };
   }, [filename, sliceAxis, showSlice, showSlicePlane, showHeatmap, ouData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Separate effect for slice value changes (debounced heatmap updates)
+    // Separate effect for slice value changes (debounced heatmap updates)
   useEffect(() => {
     if (showSlice) {
       // Update slice plane position when sliceValue changes
@@ -998,43 +1007,22 @@ function Viewer3D({ filename }) {
             } else {
       clippingPlane.normal.set(0, 0, 1);
       clippingPlane.constant = -sliceValue;
-    }
-          }
-        }
-      }
-      
-      // Update heatmap if enabled and intersection exists
-      if (showHeatmap && ouData.length > 0) {
-        const stlMesh = window.existingScene.getObjectByName("uploaded-stl");
-        if (stlMesh) {
-          const bbox = new THREE.Box3().setFromObject(stlMesh);
-          const objectMin = bbox.min;
-          const objectMax = bbox.max;
-          
-          let hasIntersection = false;
-          if (sliceAxis === "x") {
-            hasIntersection = sliceValue >= objectMin.x && sliceValue <= objectMax.x;
-          } else if (sliceAxis === "y") {
-            hasIntersection = sliceValue >= objectMin.y && sliceValue <= objectMax.y;
-          } else {
-            hasIntersection = sliceValue >= objectMin.z && sliceValue <= objectMax.z;
-          }
-          
-          if (hasIntersection) {
-            updateHeatmapDebounced();
-          } else {
-            // Remove heatmap plane if no intersection
-            const existingHeatmap = window.existingScene.getObjectByName("heatmap-plane");
-            if (existingHeatmap) {
-              window.existingScene.remove(existingHeatmap);
-              existingHeatmap.geometry.dispose();
-              existingHeatmap.material.dispose();
             }
           }
         }
       }
+      
+      // Force heatmap update when slice value changes
+      if (showHeatmap && ouData.length > 0) {
+        // Clear the boundary cache for this slice position to force regeneration
+        const cacheKey = `${sliceAxis}_${sliceValue}_64`;
+        boundaryCache.current.delete(cacheKey);
+        
+        // Trigger heatmap update immediately
+        updateHeatmapDebounced();
+      }
     }
-  }, [sliceValue, sliceAxis, showSlice, showHeatmap, ouData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sliceValue, sliceAxis, showSlice, showHeatmap, ouData, updateHeatmapDebounced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear caches when slice axis changes
   useEffect(() => {
