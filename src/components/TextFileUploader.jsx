@@ -31,7 +31,6 @@ function TextFileUploader({ onUploadSuccess }) {
       // Hide modal after 2 seconds
       setTimeout(() => setShowModal(false), 2000);
     } catch (err) {
-      console.error("Upload failed", err);
       setUploadStatus("error");
     }
   };

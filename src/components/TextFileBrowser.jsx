@@ -18,7 +18,6 @@ function TextFileBrowser({ onFileSelect }) {
       setFiles(response.data);
       setError(null);
     } catch (err) {
-      console.error("Failed to fetch files:", err);
       setError("Failed to load files");
     } finally {
       setLoading(false);
@@ -35,7 +34,6 @@ function TextFileBrowser({ onFileSelect }) {
       // Refresh the file list
       fetchFiles();
     } catch (err) {
-      console.error("Failed to delete file:", err);
       alert("Failed to delete file");
     }
   };

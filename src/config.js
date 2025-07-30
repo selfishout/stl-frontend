@@ -1,5 +1,5 @@
 // Environment configuration - change this one variable to switch between environments
-const USE_RENDER = false; // Set to true for Render, false for localhost
+const USE_RENDER = true; // Set to true for Render, false for localhost
 
 // Base URLs for different environments
 const LOCAL_BASE_URL = 'http://localhost:8000';
@@ -20,6 +20,8 @@ export function getApiUrl(path) {
 // Common API endpoints
 export const API_ENDPOINTS = {
   upload: '/upload_stl/',
+  uploadText: '/upload_text/',
+  textFiles: '/text_files/',
   health: '/health',
   docs: '/docs'
 }; 

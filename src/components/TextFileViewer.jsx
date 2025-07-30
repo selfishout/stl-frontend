@@ -22,7 +22,6 @@ function TextFileViewer({ fileId, onClose }) {
       setFilename(response.data.filename);
       setError(null);
     } catch (err) {
-      console.error("Failed to fetch file content:", err);
       setError("Failed to load file content");
     } finally {
       setLoading(false);
