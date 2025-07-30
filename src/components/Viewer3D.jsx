@@ -645,9 +645,9 @@ function Viewer3D({ filename }) {
       // Clear caches when switching files
       clearCaches();
 
-      const loader = new STLLoader();
+    const loader = new STLLoader();
       loader.load(getApiUrl(`/uploads/stl/${filename}`), (geometry) => {
-        geometry.computeBoundingBox();
+      geometry.computeBoundingBox();
         const bbox = geometry.boundingBox;
       const center = new THREE.Vector3();
         bbox.getCenter(center);
@@ -662,7 +662,7 @@ function Viewer3D({ filename }) {
 
         const material = new THREE.MeshNormalMaterial({ 
           wireframe: false,
-          side: THREE.DoubleSide,
+          side: THREE.DoubleSide, 
           clippingPlanes: showSlice ? [clippingPlane] : [],
           clipShadows: true,
           transparent: true,
@@ -676,7 +676,7 @@ function Viewer3D({ filename }) {
         if (currentSTL) scene.remove(currentSTL);
 
         mesh.name = "uploaded-stl";
-        scene.add(mesh);
+      scene.add(mesh);
         // Immediately force clipping plane update and debug
         mesh.material.clippingPlanes = showSlice ? [clippingPlane] : [];
         mesh.material.needsUpdate = true;
@@ -1007,7 +1007,7 @@ function Viewer3D({ filename }) {
             } else {
       clippingPlane.normal.set(0, 0, 1);
       clippingPlane.constant = -sliceValue;
-            }
+    }
           }
         }
       }
