@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { getApiUrl } from "../config";
+import HeatmapColorSelector from "./HeatmapColorSelector";
+import { getColorForValue } from "../utils/colorUtils";
 
 function Viewer3D({ filename }) {
   const mountRef = useRef();
@@ -11,6 +13,7 @@ function Viewer3D({ filename }) {
   const [showSlice, setShowSlice] = useState(false);
   const [showSlicePlane, setShowSlicePlane] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [selectedColorScheme, setSelectedColorScheme] = useState("blue-yellow-red");
   const [ouData, setOuData] = useState([]); // [[x, y, z, property], ...]
   const [isGeneratingHeatmap, setIsGeneratingHeatmap] = useState(false);
   const cachedMinMaxRef = useRef(null); // Cache for min/max values
@@ -240,6 +243,8 @@ function Viewer3D({ filename }) {
         const createHeatmapTextureInline = (size = 64) => {
           if (!ouData.length || isGeneratingHeatmap) return null;
           
+          // Generating heatmap with selected color scheme
+          
           setIsGeneratingHeatmap(true);
           
           const canvas = document.createElement("canvas");
@@ -372,18 +377,13 @@ function Viewer3D({ filename }) {
               // Normalize
               const t = (prop - minProp) / (maxProp - minProp + 1e-6);
               
-              // Colormap: blue (low) -> yellow (mid) -> red (high)
+              // Use selected color scheme
               let r, g, b, a;
               if (isInsideObject && prop > 0) {
-                if (t < 0.5) {
-                  r = 0;
-                  g = Math.floor(255 * (2 * t));
-                  b = Math.floor(255 * (1 - 2 * t));
-                } else {
-                  r = Math.floor(255 * (2 * (t - 0.5)));
-                  g = Math.floor(255 * (1 - 2 * (t - 0.5)));
-                  b = 0;
-                }
+                const color = getColorForValue(t, selectedColorScheme);
+                r = color.r;
+                g = color.g;
+                b = color.b;
                 a = 200; // Semi-transparent
               } else {
                 r = g = b = 0;
@@ -1029,6 +1029,265 @@ function Viewer3D({ filename }) {
     clearCaches();
   }, [sliceAxis, clearCaches]);
 
+    // Regenerate heatmap when color scheme changes
+  useEffect(() => {
+    if (showHeatmap && ouData.length > 0) {
+      // Color scheme changed, regenerating heatmap
+      // Force immediate regeneration for color scheme changes
+      if (window.existingScene) {
+        const existingHeatmap = window.existingScene.getObjectByName("heatmap-plane");
+        if (existingHeatmap) {
+          window.existingScene.remove(existingHeatmap);
+          existingHeatmap.geometry.dispose();
+          existingHeatmap.material.dispose();
+        }
+        
+        // Create heatmap texture inline to avoid circular dependency
+        const createHeatmapTextureInline = (size = 64) => {
+          if (!ouData.length || isGeneratingHeatmap) return null;
+          
+          // Generating heatmap with selected color scheme
+          
+          setIsGeneratingHeatmap(true);
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          
+          // Get cached min/max values
+          const getMinMaxValues = () => {
+            if (cachedMinMaxRef.current) {
+              return cachedMinMaxRef.current;
+            }
+            
+            let minProp = Infinity, maxProp = -Infinity;
+            for (const [x, y, z, property] of ouData) {
+              minProp = Math.min(minProp, property);
+              maxProp = Math.max(maxProp, property);
+            }
+            
+            cachedMinMaxRef.current = { minProp, maxProp };
+            return cachedMinMaxRef.current;
+          };
+          
+          const { minProp, maxProp } = getMinMaxValues();
+          
+          // Get cached spatial index
+          const spatialIndex = getCachedSpatialIndex();
+          
+          // Get cached boundary mask and plane bounds
+          const boundaryResult = getBoundaryMask(size) || { boundaryMask: [], planeBounds: { minU: -50, maxU: 50, minV: -50, maxV: 50 }, hasIntersection: false };
+          const { boundaryMask, planeBounds, hasIntersection } = boundaryResult;
+          
+          // If no intersection, don't generate heatmap
+          if (!hasIntersection) {
+            setIsGeneratingHeatmap(false);
+            return null;
+          }
+          
+          // Fast interpolation function
+          const fastInterpolateProperty = (x, y, z, spatialIndex, k = 6) => {
+            if (!ouData.length || !spatialIndex) return 0;
+            
+            // Transform coordinates to match the STL's coordinate system
+            const transform = window.stlTransform;
+            if (transform) {
+              x = (x / transform.scale) + transform.center.x;
+              y = (y / transform.scale) + transform.center.y;
+              z = (z / transform.scale) + transform.center.z;
+            }
+            
+            // Find the grid cell for this point
+            const cellX = Math.floor((x - spatialIndex.minX) / spatialIndex.cellSize);
+            const cellY = Math.floor((y - spatialIndex.minY) / spatialIndex.cellSize);
+            const cellZ = Math.floor((z - spatialIndex.minZ) / spatialIndex.cellSize);
+            
+            // Search in current cell and neighboring cells
+            const candidates = [];
+            for (let dx = -1; dx <= 1; dx++) {
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                  const key = `${cellX + dx},${cellY + dy},${cellZ + dz}`;
+                  const cellPoints = spatialIndex.grid.get(key);
+                  if (cellPoints) {
+                    candidates.push(...cellPoints);
+                  }
+                }
+              }
+            }
+            
+            if (candidates.length === 0) return 0;
+            
+            // Calculate distances and find k nearest neighbors
+            const distances = candidates.map(i => {
+              const [px, py, pz] = ouData[i];
+              const dist = Math.sqrt((x - px) ** 2 + (y - py) ** 2 + (z - pz) ** 2);
+              return { index: i, distance: dist };
+            });
+            
+            distances.sort((a, b) => a.distance - b.distance);
+            const nearest = distances.slice(0, Math.min(k, distances.length));
+            
+            // Weighted average based on inverse distance
+            let totalWeight = 0;
+            let weightedSum = 0;
+            
+            for (const { index, distance } of nearest) {
+              const weight = distance === 0 ? 1 : 1 / distance;
+              totalWeight += weight;
+              weightedSum += weight * ouData[index][3]; // property value
+            }
+            
+            return totalWeight === 0 ? 0 : weightedSum / totalWeight;
+          };
+          
+          // Draw heatmap with cached boundary detection
+          const imageData = ctx.createImageData(size, size);
+          
+          for (let i = 0; i < size; ++i) {
+            for (let j = 0; j < size; ++j) {
+              // Use standard coordinate mapping for all axes
+              const u = planeBounds.minU + (i / (size - 1)) * (planeBounds.maxU - planeBounds.minU);
+              const v = planeBounds.minV + (j / (size - 1)) * (planeBounds.maxV - planeBounds.minV);
+              let x = 0, y = 0, z = 0;
+              
+              if (sliceAxis === "x") {
+                x = sliceValue;
+                y = u;
+                z = v;
+              } else if (sliceAxis === "y") {
+                x = u;
+                y = sliceValue;
+                z = v;
+              } else {
+                x = u;
+                y = v;
+                z = sliceValue;
+              }
+              
+              // Fast interpolation for property value
+              const prop = fastInterpolateProperty(x, y, z, spatialIndex);
+              
+              // Use standard indexing - let the coordinate transformation handle orientation
+              const maskIndex = j * size + i;
+              const isInsideObject = boundaryMask[maskIndex];
+              
+              // Normalize
+              const t = (prop - minProp) / (maxProp - minProp + 1e-6);
+              
+              // Use selected color scheme
+              let r, g, b, a;
+              if (isInsideObject && prop > 0) {
+                const color = getColorForValue(t, selectedColorScheme);
+                r = color.r;
+                g = color.g;
+                b = color.b;
+                a = 200; // Semi-transparent
+              } else {
+                r = g = b = 0;
+                a = 0; // Transparent
+              }
+              
+              const idx = (j * size + i) * 4;
+              imageData.data[idx] = r;
+              imageData.data[idx + 1] = g;
+              imageData.data[idx + 2] = b;
+              imageData.data[idx + 3] = a;
+            }
+          }
+          
+          // Apply the image data and create texture
+          ctx.putImageData(imageData, 0, 0);
+          
+          // Fix orientation by flipping the canvas if needed
+          let finalTexture;
+          if (sliceAxis === "x" || sliceAxis === "y") {
+            const flippedCanvas = document.createElement("canvas");
+            flippedCanvas.width = size;
+            flippedCanvas.height = size;
+            const flippedCtx = flippedCanvas.getContext("2d");
+            
+            // Fix orientation based on slice axis
+            if (sliceAxis === "x") {
+              // Rotate 90 degrees clockwise for X-axis
+              flippedCtx.translate(size / 2, size / 2);
+              flippedCtx.rotate(Math.PI / 2);
+              flippedCtx.drawImage(canvas, -size / 2, -size / 2);
+            } else if (sliceAxis === "y") {
+              // Flip vertically for Y-axis
+              flippedCtx.scale(1, -1);
+              flippedCtx.translate(0, -size);
+              flippedCtx.drawImage(canvas, 0, 0);
+            }
+            
+            finalTexture = new THREE.CanvasTexture(flippedCanvas);
+          } else {
+            finalTexture = new THREE.CanvasTexture(canvas);
+          }
+          
+          finalTexture.needsUpdate = true;
+          setIsGeneratingHeatmap(false);
+          return finalTexture;
+        };
+        
+        const heatmapTexture = createHeatmapTextureInline();
+        if (heatmapTexture) {
+          const stlMesh = window.existingScene.getObjectByName("uploaded-stl");
+          if (stlMesh) {
+            const bbox = new THREE.Box3().setFromObject(stlMesh);
+            const objectMin = bbox.min;
+            const objectMax = bbox.max;
+            const objectSize = bbox.getSize(new THREE.Vector3());
+            
+            // Calculate heatmap plane size based on exact object bounds with small margin
+            let heatmapWidth, heatmapHeight;
+            if (sliceAxis === "x") {
+              heatmapWidth = (objectMax.z - objectMin.z) * 1.05; // width = Z
+              heatmapHeight = (objectMax.y - objectMin.y) * 1.05; // height = Y
+            } else if (sliceAxis === "y") {
+              heatmapWidth = (objectMax.x - objectMin.x) * 1.05;
+              heatmapHeight = (objectMax.z - objectMin.z) * 1.05;
+            } else {
+              heatmapWidth = (objectMax.x - objectMin.x) * 1.05;
+              heatmapHeight = (objectMax.y - objectMin.y) * 1.05;
+            }
+            
+            // Create heatmap plane geometry
+            const heatmapGeometry = new THREE.PlaneGeometry(heatmapWidth, heatmapHeight);
+            
+            // Create heatmap material with the new texture
+            const heatmapMaterial = new THREE.MeshBasicMaterial({
+              map: heatmapTexture,
+              transparent: true,
+              opacity: 0.8,
+              side: THREE.DoubleSide
+            });
+            
+            // Create heatmap mesh
+            const heatmapMesh = new THREE.Mesh(heatmapGeometry, heatmapMaterial);
+            heatmapMesh.name = "heatmap-plane";
+            
+            // Position the heatmap plane at the slice position
+            if (sliceAxis === "x") {
+              heatmapMesh.position.set(sliceValue, (objectMin.y + objectMax.y) / 2, (objectMin.z + objectMax.z) / 2);
+              heatmapMesh.rotation.set(0, Math.PI / 2, 0);
+            } else if (sliceAxis === "y") {
+              heatmapMesh.position.set((objectMin.x + objectMax.x) / 2, sliceValue, (objectMin.z + objectMax.z) / 2);
+              heatmapMesh.rotation.set(Math.PI / 2, 0, 0);
+            } else {
+              heatmapMesh.position.set((objectMin.x + objectMax.x) / 2, (objectMin.y + objectMax.y) / 2, sliceValue);
+              heatmapMesh.rotation.set(0, 0, 0);
+            }
+            
+            // Add heatmap to scene
+            window.existingScene.add(heatmapMesh);
+          }
+        }
+      }
+    }
+  }, [selectedColorScheme, showHeatmap, ouData, sliceAxis, sliceValue]);
+
   // Update mesh material clippingPlanes when showSlice changes
   useEffect(() => {
     const stlMesh = window.existingScene?.getObjectByName("uploaded-stl");
@@ -1087,6 +1346,19 @@ function Viewer3D({ filename }) {
             )}
           </label>
         </div>
+        {showHeatmap && (
+          <div style={{ marginBottom: "15px", padding: "15px", backgroundColor: "#f8f9fa", borderRadius: "8px" }}>
+            <div style={{ marginBottom: "10px", fontSize: "12px", color: "#666" }}>
+              Current: <strong>{selectedColorScheme}</strong>
+            </div>
+            <HeatmapColorSelector
+              selectedColorScheme={selectedColorScheme}
+              onColorSchemeChange={(newScheme) => {
+                setSelectedColorScheme(newScheme);
+              }}
+            />
+          </div>
+        )}
         {showSlice && (
           <>
             <div style={{ marginBottom: "10px" }}>
