@@ -3,7 +3,7 @@ const USE_RENDER = true; // Set to true for Render, false for localhost
 
 // Base URLs for different environments
 const LOCAL_BASE_URL = 'http://localhost:8000';
-const RENDER_BASE_URL = 'https://stl-backend-3iwo.onrender.com/'; // Your actual Render backend URL
+const RENDER_BASE_URL = 'https://stl-backend-3iwo.onrender.com'; // Your actual Render backend URL
 
 // Export the active configuration
 export const config = {
